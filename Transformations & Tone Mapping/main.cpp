@@ -13,6 +13,8 @@
 #include "Image.h"
 #include "Material.h"
 
+# define M_PI           3.14159265358979323846  /* pi */
+
 using namespace std;
 
 /**
@@ -164,18 +166,26 @@ public:
 		Hit hit;
 		hit.hit = false;
 		
-		/*
-		 
-		 
-		 
-		 Excercise 1 - Plane-ray intersection
-		 
-		 
-		 
-		 
-		 */
-		
-		
+		//Plane-ray intersection
+
+		float denom = glm::dot(normal, ray.direction);
+
+		if (denom != 0)
+		{
+			glm::vec3 p = point - ray.origin;
+
+			float t = glm::dot(p, normal) / denom;
+
+			if (t > 0)
+			{
+				hit.hit = true;
+				hit.intersection = ray.origin + t * ray.direction;
+				hit.normal = glm::normalize(normal);
+				hit.distance = glm::distance(ray.origin, hit.intersection);
+				hit.object = this;
+			}
+		}
+
 		return hit;
 	}
 };
@@ -338,7 +348,32 @@ void sceneDefinition (){
 	lights.push_back(new Light(glm::vec3(0, 26, 5), glm::vec3(0.4)));
 	lights.push_back(new Light(glm::vec3(0, 1, 12), glm::vec3(0.4)));
 	lights.push_back(new Light(glm::vec3(0, 5, 1), glm::vec3(0.4)));
+
+	Material purple_wall;
+	purple_wall.ambient = glm::vec3(0.5f, 0.5f, 0.7f);
+	purple_wall.diffuse = glm::vec3(0.5f, 0.5f, 0.7f);
+	purple_wall.specular = glm::vec3(0.9);
+	purple_wall.shininess = 10.0;
+
+	Material pink_wall;
+	pink_wall.ambient = glm::vec3(0.8f, 0.5f, 0.5f);
+	pink_wall.diffuse = glm::vec3(0.8f, 0.5f, 0.5f);
+	pink_wall.specular = glm::vec3(0.3);
+	pink_wall.shininess = 100.0;
 	
+	objects.push_back(new Plane(glm::vec3(-15, 0, 0), glm::vec3(1, 0, 0), pink_wall));
+	objects.push_back(new Plane(glm::vec3(15, 0, 0), glm::vec3(-1, 0, 0), purple_wall));
+
+	Material white_diffuse;
+	white_diffuse.ambient = glm::vec3(0.6f, 0.6f, 0.6f);
+	white_diffuse.diffuse = glm::vec3(0.6f, 0.6f, 0.6f);
+	white_diffuse.shininess = 10.0;
+
+	objects.push_back(new Plane(glm::vec3(0, -3, 0), glm::vec3(0, 1, 0), white_diffuse));
+	objects.push_back(new Plane(glm::vec3(0, 27, 0), glm::vec3(0, -1, 0), white_diffuse));
+
+	objects.push_back(new Plane(glm::vec3(0, 0, -0.01), glm::vec3(0, 0, 1), green_diffuse));
+	objects.push_back(new Plane(glm::vec3(0, 0, 30), glm::vec3(0, 0, -1), green_diffuse));
 	
 }
 glm::vec3 toneMapping(glm::vec3 intensity){
