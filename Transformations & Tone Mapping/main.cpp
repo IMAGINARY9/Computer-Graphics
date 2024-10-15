@@ -87,6 +87,9 @@ public:
 			 
 		*/
 
+		inverseTransformationMatrix = glm::inverse(transformationMatrix);
+		normalMatrix = glm::transpose(inverseTransformationMatrix);
+
 	}
 };
 
@@ -179,9 +182,9 @@ public:
 			if (t > 0)
 			{
 				hit.hit = true;
+				hit.distance = t;
+				hit.normal = normal;
 				hit.intersection = ray.origin + t * ray.direction;
-				hit.normal = glm::normalize(normal);
-				hit.distance = glm::distance(ray.origin, hit.intersection);
 				hit.object = this;
 			}
 		}
@@ -224,8 +227,53 @@ public:
 		hit.distance =
 		
 		 */
-		
-		
+
+		glm::vec3 dir = glm::normalize(inverseTransformationMatrix * glm::vec4(ray.direction, 0.0f));
+		glm::vec3 orig = inverseTransformationMatrix * glm::vec4(ray.origin, 1.0f);
+
+		auto a = dir.x * dir.x + dir.z * dir.z - dir.y * dir.y;
+		auto b = 2 * (dir.x * orig.x + dir.z * orig.z - dir.y * orig.y);
+		auto c = orig.x * orig.x + orig.z * orig.z - orig.y * orig.y;
+
+		float delta = b * b - 4 * a * c;
+
+		if (delta > 0)
+		{
+
+			float t1 = (-b - sqrt(delta)) / (2 * a);
+			float t2 = (-b + sqrt(delta)) / (2 * a);
+
+			float t = t1;
+			hit.intersection = orig + t * dir;
+			if (t < 0 || hit.intersection.y > 1 || hit.intersection.y < 0)
+			{
+				t = t2;
+				hit.intersection = orig + t * dir;
+				if (t < 0 || hit.intersection.y > 1 || hit.intersection.y < 0)
+				{
+					return hit;
+				}
+			}
+
+			hit.normal = glm::normalize(glm::vec3(hit.intersection.x, -hit.intersection.y, hit.intersection.z));
+
+			Ray local_ray(orig, dir);
+			Hit hit_plane = plane->intersect(local_ray);
+			if (hit_plane.hit && hit_plane.distance < t
+				&& length(hit_plane.intersection - glm::vec3(0, 1, 0)) <= 1.0f)
+			{
+				hit.intersection = hit_plane.intersection;
+				hit.normal = hit_plane.normal;
+			}
+
+			hit.hit = true;
+			hit.object = this;
+			hit.intersection = transformationMatrix * glm::vec4(hit.intersection, 1.0f);
+			hit.normal = glm::vec3(normalMatrix * glm::vec4(hit.normal, 0.0f));
+			hit.normal = glm::normalize(hit.normal);
+			hit.distance = glm::distance(hit.intersection, ray.origin);
+
+		}
 		
 		return hit;
 	}
@@ -246,7 +294,7 @@ public:
 };
 
 vector<Light *> lights; ///< A list of lights in the scene
-glm::vec3 ambient_light(0.1,0.1,0.1);
+glm::vec3 ambient_light(0.001,0.001,0.001);
 vector<Object *> objects; ///< A list of all objects in the scene
 
 
@@ -276,8 +324,10 @@ glm::vec3 PhongModel(glm::vec3 point, glm::vec3 normal, glm::vec3 view_direction
 		 Include light attenuation due to the distance to the light source.
 		 
 		*/
+
+		float ldist = max(glm::distance(point, lights[light_num]->position), 0.1f);
 		
-		color += lights[light_num]->color * (diffuse + specular);
+		color += lights[light_num]->color * (diffuse + specular) / (ldist * ldist);
 		
 	
 	}
@@ -324,57 +374,98 @@ void sceneDefinition (){
 	 
 	*/
 	
-	Material green_diffuse;
+	/*Material green_diffuse;
 	green_diffuse.ambient = glm::vec3(0.7f, 0.9f, 0.7f);
 	green_diffuse.diffuse = glm::vec3(0.7f, 0.9f, 0.7f);
 
 	Material red_specular;
-	red_specular.ambient = glm::vec3(1.0f, 0.3f, 0.3f);
+	red_specular.ambient = glm::vec3(0.01f, 0.03f, 0.03f);
 	red_specular.diffuse = glm::vec3(1.0f, 0.3f, 0.3f);
 	red_specular.specular = glm::vec3(0.5);
 	red_specular.shininess = 10.0;
 
 	Material blue_specular;
-	blue_specular.ambient = glm::vec3(0.7f, 0.7f, 1.0f);
+	blue_specular.ambient = glm::vec3(0.07f, 0.07f, 0.1f);
 	blue_specular.diffuse = glm::vec3(0.7f, 0.7f, 1.0f);
+	blue_specular.specular = glm::vec3(0.6);
+	blue_specular.shininess = 100.0;*/
+
+	Material green_diffuse;
+	green_diffuse.ambient = glm::vec3(0.03f, 0.1f, 0.03f);
+	green_diffuse.diffuse = glm::vec3(0.3f, 1.0f, 0.3f);
+
+	Material red_specular;
+	red_specular.diffuse = glm::vec3(1.0f, 0.2f, 0.2f);
+	red_specular.ambient = glm::vec3(0.01f, 0.02f, 0.02f);
+	red_specular.specular = glm::vec3(0.5);
+	red_specular.shininess = 10.0;
+
+	Material blue_specular;
+	blue_specular.ambient = glm::vec3(0.02f, 0.02f, 0.1f);
+	blue_specular.diffuse = glm::vec3(0.2f, 0.2f, 1.0f);
 	blue_specular.specular = glm::vec3(0.6);
 	blue_specular.shininess = 100.0;
 	
 	
 	objects.push_back(new Sphere(1.0, glm::vec3(1,-2,8), blue_specular));
 	objects.push_back(new Sphere(0.5, glm::vec3(-1,-2.5,6), red_specular));
-	objects.push_back(new Sphere(1.0, glm::vec3(2,-2,6), green_diffuse));
-		
-	lights.push_back(new Light(glm::vec3(0, 26, 5), glm::vec3(0.4)));
-	lights.push_back(new Light(glm::vec3(0, 1, 12), glm::vec3(0.4)));
-	lights.push_back(new Light(glm::vec3(0, 5, 1), glm::vec3(0.4)));
+
+	//
+
+	Material yellow_specular;
+	yellow_specular.ambient = glm::vec3(0.1f);
+	yellow_specular.diffuse = glm::vec3(1.0f, 1.0f, 0.0f);
+	yellow_specular.specular = glm::vec3(0.6f);
+	yellow_specular.shininess = 100.0;
+
+	Cone* yellow_cone = new Cone(yellow_specular);
+	glm::mat4 translationMatrix = glm::translate(glm::vec3(5, 9, 14));
+	glm::mat4 scalingMatrix = glm::scale(glm::vec3(3.0f, 12.0f, 3.0f));
+	glm::mat4 rotationMatrix = glm::rotate(glm::radians(180.0f), glm::vec3(1, 0, 0));
+	yellow_cone->setTransformation(translationMatrix * scalingMatrix * rotationMatrix);
+
+	Cone* green_cone = new Cone(green_diffuse);
+	translationMatrix = glm::translate(glm::vec3(6, -3, 7));
+	scalingMatrix = glm::scale(glm::vec3(1.0f, 3.0f, 1.0f));
+	rotationMatrix = glm::rotate(glm::atan(3.0f), glm::vec3(0, 0, 1));
+	green_cone->setTransformation(translationMatrix * rotationMatrix * scalingMatrix);
+	
+	objects.push_back(yellow_cone);
+	objects.push_back(green_cone);
+
+	//
 
 	Material purple_wall;
-	purple_wall.ambient = glm::vec3(0.5f, 0.5f, 0.7f);
+	purple_wall.ambient = glm::vec3(0.05f, 0.05f, 0.07f);
 	purple_wall.diffuse = glm::vec3(0.5f, 0.5f, 0.7f);
 	purple_wall.specular = glm::vec3(0.9);
 	purple_wall.shininess = 10.0;
 
 	Material pink_wall;
-	pink_wall.ambient = glm::vec3(0.8f, 0.5f, 0.5f);
+	pink_wall.ambient = glm::vec3(0.08f, 0.05f, 0.05f);
 	pink_wall.diffuse = glm::vec3(0.8f, 0.5f, 0.5f);
 	pink_wall.specular = glm::vec3(0.3);
 	pink_wall.shininess = 100.0;
 	
-	objects.push_back(new Plane(glm::vec3(-15, 0, 0), glm::vec3(1, 0, 0), pink_wall));
-	objects.push_back(new Plane(glm::vec3(15, 0, 0), glm::vec3(-1, 0, 0), purple_wall));
-
 	Material white_diffuse;
-	white_diffuse.ambient = glm::vec3(0.6f, 0.6f, 0.6f);
+	white_diffuse.ambient = glm::vec3(0.06f, 0.06f, 0.06f);
 	white_diffuse.diffuse = glm::vec3(0.6f, 0.6f, 0.6f);
 	white_diffuse.shininess = 10.0;
 
+	objects.push_back(new Plane(glm::vec3(15, 0, 0), glm::vec3(-1, 0, 0), purple_wall));
+	objects.push_back(new Plane(glm::vec3(-15, 0, 0), glm::vec3(1, 0, 0), pink_wall));
+	
 	objects.push_back(new Plane(glm::vec3(0, -3, 0), glm::vec3(0, 1, 0), white_diffuse));
 	objects.push_back(new Plane(glm::vec3(0, 27, 0), glm::vec3(0, -1, 0), white_diffuse));
 
 	objects.push_back(new Plane(glm::vec3(0, 0, -0.01), glm::vec3(0, 0, 1), green_diffuse));
 	objects.push_back(new Plane(glm::vec3(0, 0, 30), glm::vec3(0, 0, -1), green_diffuse));
 	
+	//
+
+	lights.push_back(new Light(glm::vec3(0, 26, 5), glm::vec3(0.1)));
+	lights.push_back(new Light(glm::vec3(0, 1, 12), glm::vec3(0.1)));
+	lights.push_back(new Light(glm::vec3(0, 5, 1), glm::vec3(0.4)));
 }
 glm::vec3 toneMapping(glm::vec3 intensity){
 
@@ -383,6 +474,10 @@ glm::vec3 toneMapping(glm::vec3 intensity){
 	 Implement a tonemapping strategy and gamma correction for a correct display.
 	 
 	*/
+
+	float gamma = 2;
+	float alpha = 10.0f;
+	return alpha * glm::pow(intensity, glm::vec3(1 / gamma));
 	
 	return intensity;
 }
