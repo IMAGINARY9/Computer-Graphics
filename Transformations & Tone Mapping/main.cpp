@@ -81,10 +81,7 @@ public:
 			
 		/* ----- Exercise 2 ---------
 		Set the two remaining matrices
-			
-		inverseTransformationMatrix =
-		normalMatrix =
-			 
+
 		*/
 
 		inverseTransformationMatrix = glm::inverse(transformationMatrix);
@@ -219,12 +216,6 @@ public:
 		/* If the intersection is found, you have to set all the critical fields in the Hit strucutre
 		 Remember that the final information about intersection point, normal vector and distance have to be given
 		 in the global coordinate system.
-		 
-		hit.hit = true;
-		hit.object = this;
-		hit.intersection =
-		hit.normal =
-		hit.distance =
 		
 		 */
 
@@ -373,22 +364,6 @@ void sceneDefinition (){
 	 Modify the scene definition according to the exercises
 	 
 	*/
-	
-	/*Material green_diffuse;
-	green_diffuse.ambient = glm::vec3(0.7f, 0.9f, 0.7f);
-	green_diffuse.diffuse = glm::vec3(0.7f, 0.9f, 0.7f);
-
-	Material red_specular;
-	red_specular.ambient = glm::vec3(0.01f, 0.03f, 0.03f);
-	red_specular.diffuse = glm::vec3(1.0f, 0.3f, 0.3f);
-	red_specular.specular = glm::vec3(0.5);
-	red_specular.shininess = 10.0;
-
-	Material blue_specular;
-	blue_specular.ambient = glm::vec3(0.07f, 0.07f, 0.1f);
-	blue_specular.diffuse = glm::vec3(0.7f, 0.7f, 1.0f);
-	blue_specular.specular = glm::vec3(0.6);
-	blue_specular.shininess = 100.0;*/
 
 	Material green_diffuse;
 	green_diffuse.ambient = glm::vec3(0.03f, 0.1f, 0.03f);
@@ -413,8 +388,8 @@ void sceneDefinition (){
 	//
 
 	Material yellow_specular;
-	yellow_specular.ambient = glm::vec3(0.1f);
-	yellow_specular.diffuse = glm::vec3(1.0f, 1.0f, 0.0f);
+	yellow_specular.ambient = glm::vec3(0.2f);
+	yellow_specular.diffuse = glm::vec3(0.5f, 0.5f, 0.0f);
 	yellow_specular.specular = glm::vec3(0.6f);
 	yellow_specular.shininess = 100.0;
 
@@ -475,7 +450,7 @@ glm::vec3 toneMapping(glm::vec3 intensity){
 	 
 	*/
 
-	float gamma = 2;
+	float gamma = 2.25f;
 	float alpha = 10.0f;
 	return alpha * glm::pow(intensity, glm::vec3(1 / gamma));
 	
