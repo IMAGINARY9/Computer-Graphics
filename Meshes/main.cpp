@@ -330,120 +330,50 @@ public:
 
 class Mesh : public Object {
 private:
-	std::vector<Triangle> triangles;        ///< Triangles defined in object coordinates
-	std::vector<glm::vec3> vertices;        ///< Vertex positions
-	std::vector<glm::vec3> normals;         ///< Vertex normals
-	bool smoothShading = true;              ///< Smooth shading enabled by default
+	std::vector<Triangle> triangles; ///< Triangles defined in object coordinates
+	std::vector<glm::vec3> vertices; ///< Vertex positions
+	std::vector<glm::vec3> normals;  ///< Vertex normals
+	bool smoothShading = false;      ///< Smooth shading enabled by default
 
 public:
-	// Load the mesh from an OBJ file with support for "s" smooth shading flag
 	void loadOBJ(const std::string& filepath) {
 		std::ifstream file(filepath);
-		std::string line;
+		if (!file.is_open()) {
+			std::cerr << "Unable to open file: " << filepath << std::endl;
+			return;
+		}
 
+		std::string line;
 		while (std::getline(file, line)) {
 			std::istringstream stream(line);
 			std::string type;
 			stream >> type;
 
 			if (type == "v") {
-				// Parse vertex position
-				float x, y, z;
-				stream >> x >> y >> z;
-				vertices.push_back(glm::vec3(x, y, z));
+				parseVertex(stream);
 			}
 			else if (type == "vn") {
-				// Parse vertex normal
-				float nx, ny, nz;
-				stream >> nx >> ny >> nz;
-				normals.push_back(glm::vec3(nx, ny, nz));
-			}
-			else if (type == "f") {
-				// Parse face indices; handle cases with or without normal indices
-				std::vector<int> vertexIndices;
-				std::vector<int> normalIndices;
-				bool hasNormals = false;
-
-				for (int i = 0; i < 3; ++i) {
-					std::string vertexString;
-					if (!(stream >> vertexString)) {
-						std::cerr << "Error parsing face line: " << line << std::endl;
-						return;
-					}
-
-					size_t pos = vertexString.find("//");
-					if (pos != std::string::npos) {
-						// Format: "v//n" (vertex with normal index but no texture coordinate)
-						int vIndex = std::stoi(vertexString.substr(0, pos)) - 1;
-						int nIndex = std::stoi(vertexString.substr(pos + 2)) - 1;
-						vertexIndices.push_back(vIndex);
-						normalIndices.push_back(nIndex);
-						hasNormals = true;
-					}
-					else {
-						// Format: "v" (only vertex index)
-						int vIndex = std::stoi(vertexString) - 1;
-						vertexIndices.push_back(vIndex);
-					}
-				}
-
-				// Validate indices
-				if (vertexIndices.size() != 3 || (hasNormals && normalIndices.size() != 3)) {
-					std::cerr << "Face line has incorrect number of indices: " << line << std::endl;
-					return;
-				}
-				for (int vIndex : vertexIndices) {
-					if (vIndex < 0 || vIndex >= vertices.size()) {
-						std::cerr << "Vertex index out of range: " << vIndex + 1 << " in line: " << line << std::endl;
-						return;
-					}
-				}
-				if (hasNormals) {
-					for (int nIndex : normalIndices) {
-						if (nIndex < 0 || nIndex >= normals.size()) {
-							std::cerr << "Normal index out of range: " << nIndex + 1 << " in line: " << line << std::endl;
-							return;
-						}
-					}
-				}
-
-				// Create triangle with vertex positions and handle normals based on shading mode
-				Triangle triangle(vertices[vertexIndices[0]], vertices[vertexIndices[1]], vertices[vertexIndices[2]]);
-				if (smoothShading && hasNormals) {
-					// Use interpolated normals for smooth shading
-					triangle.setNormals(normals[normalIndices[0]], normals[normalIndices[1]], normals[normalIndices[2]]);
-				}
-				else {
-					// Compute flat normal if smooth shading is disabled or no normals provided
-					glm::vec3 edge1 = vertices[vertexIndices[1]] - vertices[vertexIndices[0]];
-					glm::vec3 edge2 = vertices[vertexIndices[2]] - vertices[vertexIndices[0]];
-					glm::vec3 flatNormal = glm::normalize(glm::cross(edge1, edge2));
-					triangle.setNormals(flatNormal, flatNormal, flatNormal);
-				}
-				triangles.push_back(triangle);
+				parseNormal(stream);
 			}
 			else if (type == "s") {
-				// Smooth shading on/off
-				std::string shading;
-				stream >> shading;
-				smoothShading = (shading != "off");
+				parseShading(stream);
+			}
+			else if (type == "f") {
+				parseFace(stream);
 			}
 		}
 		file.close();
 	}
 
-	// Apply the transformation matrix to convert object coordinates to world coordinates
 	Hit intersect(Ray ray) override {
 		Hit closestHit;
 		closestHit.hit = false;
 		closestHit.distance = INFINITY;
 
-		// Transform ray into object (local) coordinates using the inverse matrix
 		glm::vec3 localOrigin = glm::vec3(inverseTransformationMatrix * glm::vec4(ray.origin, 1.0));
 		glm::vec3 localDirection = glm::normalize(glm::vec3(inverseTransformationMatrix * glm::vec4(ray.direction, 0.0)));
 		Ray localRay(localOrigin, localDirection);
 
-		// Check intersections in object space
 		for (Triangle& triangle : triangles) {
 			Hit hit = triangle.intersect(localRay);
 			if (hit.hit && hit.distance < closestHit.distance) {
@@ -460,8 +390,62 @@ public:
 
 		return closestHit;
 	}
-};
 
+private:
+	void parseVertex(std::istringstream& stream) {
+		float x, y, z;
+		stream >> x >> y >> z;
+		vertices.emplace_back(x, y, z);
+	}
+
+	void parseNormal(std::istringstream& stream) {
+		float nx, ny, nz;
+		stream >> nx >> ny >> nz;
+		normals.emplace_back(nx, ny, nz);
+	}
+
+	void parseShading(std::istringstream& stream) {
+		std::string shading;
+		stream >> shading;
+		smoothShading = (shading != "off");
+	}
+
+	void parseFace(std::istringstream& stream) {
+		std::vector<int> vertexIndices;
+		std::vector<int> normalIndices;
+		std::string vertexString;
+
+		for (int i = 0; i < 3; ++i) {
+			if (!(stream >> vertexString)) {
+				std::cerr << "Error parsing face line: " << vertexString << std::endl;
+				return;
+			}
+
+			size_t pos = vertexString.find("//");
+			if (pos != std::string::npos && smoothShading) {
+				// "v//n" format
+				int vIndex = std::stoi(vertexString.substr(0, pos)) - 1;
+				int nIndex = std::stoi(vertexString.substr(pos + 2)) - 1;
+				vertexIndices.push_back(vIndex);
+				normalIndices.push_back(nIndex);
+			}
+			else {
+				// "v" format
+				int vIndex = std::stoi(vertexString) - 1;
+				vertexIndices.push_back(vIndex);
+			}
+		}
+
+		Triangle triangle(vertices[vertexIndices[0]], vertices[vertexIndices[1]], vertices[vertexIndices[2]]);
+		if (smoothShading && !normalIndices.empty()) {
+			triangle.setNormals(normals[normalIndices[0]], normals[normalIndices[1]], normals[normalIndices[2]]);
+		}
+
+		triangles.push_back(triangle);
+	}
+
+
+};
 /**
  Light class
  */
@@ -624,32 +608,81 @@ void sceneDefinition (){
 	//objects.push_back(new Triangle(glm::vec3(1, -3, 8), glm::vec3(3, -3, 6), glm::vec3(3, 0, 8), blue_specular);
 
 	// Meshes
-	Mesh* meshb = new Mesh();
-	meshb->loadOBJ("./bunny.obj");
+	//Mesh* meshb = new Mesh();
+	//meshb->loadOBJ("./bunny_with_normals.obj");
+
+	////Set the object-to-world transformation
+	//glm::mat4 translationMatrixb = glm::translate(glm::vec3(0.0f, -3.0f, 9.0f));
+	//glm::mat4 scalingMatrixb = glm::scale(glm::vec3(1.0));
+	//glm::mat4 rotationMatrix = glm::rotate(glm::radians(0.0f), glm::vec3(0, 1, 0));
+
+	////Combine transformations and set them in the mesh
+	//meshb->setTransformation(translationMatrixb * rotationMatrix * scalingMatrixb);
+
+	//objects.push_back(meshb);
+
+	//Mesh* meshbn = new Mesh();
+	//meshbn->loadOBJ("./bunny_with_normals.obj");
+
+	////Set the object-to-world transformation
+	//glm::mat4 translationMatrixbn = glm::translate(glm::vec3(2.0f, -3.0f, 9.0f));
+	//glm::mat4 scalingMatrixbn = glm::scale(glm::vec3(1.0));
+	//glm::mat4 rotationMatrixbn = glm::rotate(glm::radians(0.0f), glm::vec3(0, 1, 0));
+
+	////Combine transformations and set them in the mesh
+	//meshbn->setTransformation(translationMatrixbn * rotationMatrixbn * scalingMatrixbn);
+
+	//objects.push_back(meshbn);
+
+	 //Mesh *mesha = new Mesh();
+	 //mesha->loadOBJ("./armadillo_with_normals.obj");
+
+	 ////Set the object-to-world transformation
+	 //glm::mat4 translationMatrixa = glm::translate(glm::vec3(-3.0f, -2.0f, 9.0f));
+	 //glm::mat4 scalingMatrixa = glm::scale(glm::vec3(0.5f));
+
+	 ////Combine transformations and set them in the mesh
+	 //mesha->setTransformation(translationMatrixa * rotationMatrix * scalingMatrixa);
+
+	 //objects.push_back(mesha);
+
+	 //Mesh *meshl = new Mesh();
+	 //meshl->loadOBJ("./lucy_with_normals.obj");
+
+	 ////Set the object-to-world transformation
+	 //glm::mat4 translationMatrixl = glm::translate(glm::vec3(3.0f, -2.0f, 9.0f));
+	 //glm::mat4 scalingMatrixl = glm::scale(glm::vec3(0.5f));
+
+	 ////Combine transformations and set them in the mesh
+	 //meshl->setTransformation(translationMatrixl * rotationMatrix * scalingMatrixl);
+
+	 //objects.push_back(meshl);
+
+	Mesh* meshd = new Mesh();
+	meshd->loadOBJ("./dog.obj");
 
 	//Set the object-to-world transformation
-	glm::mat4 translationMatrixb = glm::translate(glm::vec3(-2.0f, -3.0f, 9.0f));
-	glm::mat4 scalingMatrixb = glm::scale(glm::vec3(1.0));
-	glm::mat4 rotationMatrixb = glm::rotate(glm::radians(0.0f), glm::vec3(0, 1, 0));
+	glm::mat4 translationMatrixl = glm::translate(glm::vec3(-2.0f, -2.0f, 9.0f));
+	glm::mat4 scalingMatrixl = glm::scale(glm::vec3(5.0f));
+	glm::mat4 rotationMatrix = glm::rotate(glm::radians(0.0f), glm::vec3(0.5f, 1, 0));
 
 	//Combine transformations and set them in the mesh
-	meshb->setTransformation(translationMatrixb * rotationMatrixb * scalingMatrixb);
+	meshd->setTransformation(translationMatrixl * rotationMatrix * scalingMatrixl);
 
-	objects.push_back(meshb);
+	objects.push_back(meshd);
 
-	Mesh* meshbn = new Mesh();
-	meshbn->loadOBJ("./bunny_with_normals.obj");
+	Mesh* meshdn = new Mesh();
+	meshdn->loadOBJ("./dog_with_normals.obj");
 
 	//Set the object-to-world transformation
-	glm::mat4 translationMatrixbn = glm::translate(glm::vec3(2.0f, -3.0f, 9.0f));
-	glm::mat4 scalingMatrixbn = glm::scale(glm::vec3(1.0));
-	glm::mat4 rotationMatrixbn = glm::rotate(glm::radians(0.0f), glm::vec3(0, 1, 0));
+	translationMatrixl = glm::translate(glm::vec3(2.0f, -2.0f, 9.0f));
+	rotationMatrix = glm::rotate(glm::radians(0.0f), glm::vec3(0.5f, 1, 0));
 
 	//Combine transformations and set them in the mesh
-	meshbn->setTransformation(translationMatrixbn * rotationMatrixbn * scalingMatrixbn);
+	meshdn->setTransformation(translationMatrixl* rotationMatrix* scalingMatrixl);
 
-	objects.push_back(meshbn);
-	
+	objects.push_back(meshdn);
+
 }
 glm::vec3 toneMapping(glm::vec3 intensity){
 	float gamma = 1.0/2.0;
