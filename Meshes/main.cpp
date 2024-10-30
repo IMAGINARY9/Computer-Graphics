@@ -7,11 +7,15 @@
 #include <cmath>
 #include <ctime>
 #include <vector>
-#include "glm/glm.hpp"
-#include "glm/gtx/transform.hpp"
+#include <string>
+#include <sstream>
+#include "../glm/glm.hpp"
+#include "../glm/gtx/transform.hpp"
 
 #include "Image.h"
 #include "Material.h"
+
+# define M_PI           3.14159265358979323846  /* pi */
 
 using namespace std;
 
@@ -177,6 +181,89 @@ public:
 	}
 };
 
+class Triangle : public Object {
+private:
+	glm::vec3 p0, p1, p2;
+	glm::vec3 n0, n1, n2;
+	bool smooth;
+
+public:
+	Triangle(glm::vec3 p0, glm::vec3  p1, glm::vec3 p2) : p0(p0), p1(p1), p2(p2), smooth(false) {}
+	Triangle(glm::vec3 p0, glm::vec3  p1, glm::vec3 p2, glm::vec3 color) : p0(p0), p1(p1), p2(p2), smooth(false)
+	{
+		this->color = color;
+	}
+	Triangle(glm::vec3 p0, glm::vec3  p1, glm::vec3 p2, Material material) : p0(p0), p1(p1), p2(p2), smooth(false)
+	{
+		this->material = material;
+	}
+
+	void setNormals(glm::vec3 normal0, glm::vec3 normal1, glm::vec3 normal2) {
+		n0 = normal0;
+		n1 = normal1;
+		n2 = normal2;
+		smooth = true;
+	}
+
+	Hit intersect(Ray ray) {
+
+		Hit hit;
+		hit.hit = false;
+
+		// Edge vectors 
+		glm::vec3 e1 = p1 - p0;
+		glm::vec3 e2 = p2 - p0;
+
+		glm::vec3 DcrossE2 = glm::cross(ray.direction, e2);
+		float det = glm::dot(e1, DcrossE2);
+
+		if (det != 0)
+		{
+			float invDet = 1.0 / det;
+
+			// Distance from p0 to ray origin
+			glm::vec3 s = ray.origin - p0;
+
+			float u = glm::dot(s, DcrossE2) * invDet;
+			if (u < 0 || u > 1)
+				return hit;
+
+			glm::vec3 ScrossE1 = glm::cross(s, e1);
+			float v = glm::dot(ray.direction, ScrossE1) * invDet;
+			if (v < 0 || u + v > 1)
+				return hit;
+
+			float t = glm::dot(e2, ScrossE1) * invDet;
+
+			if (t > 0)
+			{
+				hit.hit = true;
+				hit.distance = t;
+				hit.intersection = ray.origin + t * ray.direction;
+
+				if (smooth)
+				{
+					float b0 = 1 - u - v;
+					float b1 = u;
+					float b2 = v;
+
+					glm::vec3 interpolatedNormal = glm::normalize(b0 * n0 + b1 * n1 + b2 * n2);
+
+					hit.normal = interpolatedNormal;
+				}
+				else
+				{
+					hit.normal = glm::normalize(glm::cross(e1, e2));
+				}
+
+				hit.object = this;
+			}
+		}
+
+		return hit;
+	}
+};
+
 class Cone : public Object{
 private:
 	Plane *plane;
@@ -238,6 +325,140 @@ public:
 		hit.distance = glm::length(hit.intersection - ray.origin);
 		
 		return hit;
+	}
+};
+
+class Mesh : public Object {
+private:
+	std::vector<Triangle> triangles;        ///< Triangles defined in object coordinates
+	std::vector<glm::vec3> vertices;        ///< Vertex positions
+	std::vector<glm::vec3> normals;         ///< Vertex normals
+	bool smoothShading = true;              ///< Smooth shading enabled by default
+
+public:
+	// Load the mesh from an OBJ file with support for "s" smooth shading flag
+	void loadOBJ(const std::string& filepath) {
+		std::ifstream file(filepath);
+		std::string line;
+
+		while (std::getline(file, line)) {
+			std::istringstream stream(line);
+			std::string type;
+			stream >> type;
+
+			if (type == "v") {
+				// Parse vertex position
+				float x, y, z;
+				stream >> x >> y >> z;
+				vertices.push_back(glm::vec3(x, y, z));
+			}
+			else if (type == "vn") {
+				// Parse vertex normal
+				float nx, ny, nz;
+				stream >> nx >> ny >> nz;
+				normals.push_back(glm::vec3(nx, ny, nz));
+			}
+			else if (type == "f") {
+				// Parse face indices; handle cases with or without normal indices
+				std::vector<int> vertexIndices;
+				std::vector<int> normalIndices;
+				bool hasNormals = false;
+
+				for (int i = 0; i < 3; ++i) {
+					std::string vertexString;
+					if (!(stream >> vertexString)) {
+						std::cerr << "Error parsing face line: " << line << std::endl;
+						return;
+					}
+
+					size_t pos = vertexString.find("//");
+					if (pos != std::string::npos) {
+						// Format: "v//n" (vertex with normal index but no texture coordinate)
+						int vIndex = std::stoi(vertexString.substr(0, pos)) - 1;
+						int nIndex = std::stoi(vertexString.substr(pos + 2)) - 1;
+						vertexIndices.push_back(vIndex);
+						normalIndices.push_back(nIndex);
+						hasNormals = true;
+					}
+					else {
+						// Format: "v" (only vertex index)
+						int vIndex = std::stoi(vertexString) - 1;
+						vertexIndices.push_back(vIndex);
+					}
+				}
+
+				// Validate indices
+				if (vertexIndices.size() != 3 || (hasNormals && normalIndices.size() != 3)) {
+					std::cerr << "Face line has incorrect number of indices: " << line << std::endl;
+					return;
+				}
+				for (int vIndex : vertexIndices) {
+					if (vIndex < 0 || vIndex >= vertices.size()) {
+						std::cerr << "Vertex index out of range: " << vIndex + 1 << " in line: " << line << std::endl;
+						return;
+					}
+				}
+				if (hasNormals) {
+					for (int nIndex : normalIndices) {
+						if (nIndex < 0 || nIndex >= normals.size()) {
+							std::cerr << "Normal index out of range: " << nIndex + 1 << " in line: " << line << std::endl;
+							return;
+						}
+					}
+				}
+
+				// Create triangle with vertex positions and handle normals based on shading mode
+				Triangle triangle(vertices[vertexIndices[0]], vertices[vertexIndices[1]], vertices[vertexIndices[2]]);
+				if (smoothShading && hasNormals) {
+					// Use interpolated normals for smooth shading
+					triangle.setNormals(normals[normalIndices[0]], normals[normalIndices[1]], normals[normalIndices[2]]);
+				}
+				else {
+					// Compute flat normal if smooth shading is disabled or no normals provided
+					glm::vec3 edge1 = vertices[vertexIndices[1]] - vertices[vertexIndices[0]];
+					glm::vec3 edge2 = vertices[vertexIndices[2]] - vertices[vertexIndices[0]];
+					glm::vec3 flatNormal = glm::normalize(glm::cross(edge1, edge2));
+					triangle.setNormals(flatNormal, flatNormal, flatNormal);
+				}
+				triangles.push_back(triangle);
+			}
+			else if (type == "s") {
+				// Smooth shading on/off
+				std::string shading;
+				stream >> shading;
+				smoothShading = (shading != "off");
+			}
+		}
+		file.close();
+	}
+
+	// Apply the transformation matrix to convert object coordinates to world coordinates
+	Hit intersect(Ray ray) override {
+		Hit closestHit;
+		closestHit.hit = false;
+		closestHit.distance = INFINITY;
+
+		// Transform ray into object (local) coordinates using the inverse matrix
+		glm::vec3 localOrigin = glm::vec3(inverseTransformationMatrix * glm::vec4(ray.origin, 1.0));
+		glm::vec3 localDirection = glm::normalize(glm::vec3(inverseTransformationMatrix * glm::vec4(ray.direction, 0.0)));
+		Ray localRay(localOrigin, localDirection);
+
+		// Check intersections in object space
+		for (Triangle& triangle : triangles) {
+			Hit hit = triangle.intersect(localRay);
+			if (hit.hit && hit.distance < closestHit.distance) {
+				closestHit = hit;
+			}
+		}
+
+		if (closestHit.hit) {
+			// Convert intersection point and normal back to world coordinates
+			closestHit.intersection = glm::vec3(transformationMatrix * glm::vec4(closestHit.intersection, 1.0));
+			closestHit.normal = glm::normalize(glm::vec3(normalMatrix * glm::vec4(closestHit.normal, 0.0)));
+			closestHit.distance = glm::distance(ray.origin, closestHit.intersection);
+		}
+
+		return closestHit;
 	}
 };
 
@@ -357,10 +578,10 @@ void sceneDefinition (){
 	blue_specular.specular = glm::vec3(0.6);
 	blue_specular.shininess = 100.0;
 
-	objects.push_back(new Sphere(1.0, glm::vec3(1,-2,8), blue_specular));
-	objects.push_back(new Sphere(0.5, glm::vec3(-1,-2.5,6), red_specular));
+	//objects.push_back(new Sphere(1.0, glm::vec3(1,-2,8), blue_specular));
+	//objects.push_back(new Sphere(0.5, glm::vec3(-1,-2.5,6), red_specular));
 	
-	lights.push_back(new Light(glm::vec3(0, 26, 5), glm::vec3(1.0, 1.0, 1.0)));
+	lights.push_back(new Light(glm::vec3(0, 26, 5), glm::vec3(1.0)));
 	lights.push_back(new Light(glm::vec3(0, 1, 12), glm::vec3(0.1)));
 	lights.push_back(new Light(glm::vec3(0, 5, 1), glm::vec3(0.4)));
 	
@@ -378,8 +599,6 @@ void sceneDefinition (){
     objects.push_back(new Plane(glm::vec3(0,27,0), glm::vec3(0.0,-1,0)));
     objects.push_back(new Plane(glm::vec3(0,1,-0.01), glm::vec3(0.0,0.0,1.0), green_diffuse));
 	
-	
-	
 	// Cones
 	Material yellow_specular;
 	yellow_specular.ambient = glm::vec3(0.1f, 0.10f, 0.0f);
@@ -387,7 +606,7 @@ void sceneDefinition (){
 	yellow_specular.specular = glm::vec3(1.0);
 	yellow_specular.shininess = 100.0;
 	
-	Cone *cone = new Cone(yellow_specular);
+	/*Cone *cone = new Cone(yellow_specular);
 	glm::mat4 translationMatrix = glm::translate(glm::vec3(5,9,14));
 	glm::mat4 scalingMatrix = glm::scale(glm::vec3(3.0f, 12.0f, 3.0f));
 	glm::mat4 rotationMatrix = glm::rotate(glm::radians(180.0f) , glm::vec3(1,0,0));
@@ -399,7 +618,37 @@ void sceneDefinition (){
 	scalingMatrix = glm::scale(glm::vec3(1.0f, 3.0f, 1.0f));
 	rotationMatrix = glm::rotate(glm::atan(3.0f), glm::vec3(0,0,1));
 	cone2->setTransformation(translationMatrix* rotationMatrix*scalingMatrix);
-	objects.push_back(cone2);
+	objects.push_back(cone2);*/
+
+	// Tringle
+	//objects.push_back(new Triangle(glm::vec3(1, -3, 8), glm::vec3(3, -3, 6), glm::vec3(3, 0, 8), blue_specular);
+
+	// Meshes
+	Mesh* meshb = new Mesh();
+	meshb->loadOBJ("./bunny.obj");
+
+	//Set the object-to-world transformation
+	glm::mat4 translationMatrixb = glm::translate(glm::vec3(-2.0f, -3.0f, 9.0f));
+	glm::mat4 scalingMatrixb = glm::scale(glm::vec3(1.0));
+	glm::mat4 rotationMatrixb = glm::rotate(glm::radians(0.0f), glm::vec3(0, 1, 0));
+
+	//Combine transformations and set them in the mesh
+	meshb->setTransformation(translationMatrixb * rotationMatrixb * scalingMatrixb);
+
+	objects.push_back(meshb);
+
+	Mesh* meshbn = new Mesh();
+	meshbn->loadOBJ("./bunny_with_normals.obj");
+
+	//Set the object-to-world transformation
+	glm::mat4 translationMatrixbn = glm::translate(glm::vec3(2.0f, -3.0f, 9.0f));
+	glm::mat4 scalingMatrixbn = glm::scale(glm::vec3(1.0));
+	glm::mat4 rotationMatrixbn = glm::rotate(glm::radians(0.0f), glm::vec3(0, 1, 0));
+
+	//Combine transformations and set them in the mesh
+	meshbn->setTransformation(translationMatrixbn * rotationMatrixbn * scalingMatrixbn);
+
+	objects.push_back(meshbn);
 	
 }
 glm::vec3 toneMapping(glm::vec3 intensity){
@@ -407,49 +656,125 @@ glm::vec3 toneMapping(glm::vec3 intensity){
 	float alpha = 12.0f;
 	return glm::clamp(alpha * glm::pow(intensity, glm::vec3(gamma)), glm::vec3(0.0), glm::vec3(1.0));
 }
-int main(int argc, const char * argv[]) {
+//int main(int argc, const char * argv[]) {
+//
+//    clock_t t = clock(); // variable for keeping the time of the rendering
+//
+//    int width = 1024; //width of the image
+//    int height = 768; // height of the image
+//    float fov = 90; // field of view
+//
+//	sceneDefinition(); // Let's define a scene
+//
+//	Image image(width,height); // Create an image where we will store the result
+//	vector<glm::vec3> image_values(width*height);
+//
+//    float s = 2*tan(0.5*fov/180*M_PI)/width;
+//    float X = -s * width / 2;
+//    float Y = s * height / 2;
+//
+//    for(int i = 0; i < width ; i++)
+//        for(int j = 0; j < height ; j++){
+//
+//			float dx = X + i*s + s/2;
+//            float dy = Y - j*s - s/2;
+//            float dz = 1;
+//
+//			glm::vec3 origin(0, 0, 0);
+//            glm::vec3 direction(dx, dy, dz);
+//            direction = glm::normalize(direction);
+//
+//            Ray ray(origin, direction);
+//            image.setPixel(i, j, toneMapping(trace_ray(ray)));
+//        }
+//	
+//    t = clock() - t;
+//    cout<<"It took " << ((float)t)/CLOCKS_PER_SEC<< " seconds to render the image."<< endl;
+//    cout<<"I could render at "<< (float)CLOCKS_PER_SEC/((float)t) << " frames per second."<<endl;
+//
+//	// Writing the final results of the rendering
+//	if (argc == 2){
+//		image.writeImage(argv[1]);
+//	}else{
+//		image.writeImage("./result.ppm");
+//	}
+//
+//	
+//    return 0;
+//}
 
-    clock_t t = clock(); // variable for keeping the time of the rendering
+#include <thread>
+#include <mutex>
 
-    int width = 1024; //width of the image
-    int height = 768; // height of the image
-    float fov = 90; // field of view
+const int NUM_THREADS = std::thread::hardware_concurrency();
+mutex io_mutex;
 
-	sceneDefinition(); // Let's define a scene
+void render_chank(int start, int end, int width, int height, float X, float Y, float s, vector<glm::vec3>& image_values) {
+	for (int index = start; index < end; index++) {
+		int i = index % width;
+		int j = index / width;
 
-	Image image(width,height); // Create an image where we will store the result
-	vector<glm::vec3> image_values(width*height);
+		float dx = X + i * s + s / 2;
+		float dy = Y - j * s - s / 2;
+		float dz = 1;
 
-    float s = 2*tan(0.5*fov/180*M_PI)/width;
-    float X = -s * width / 2;
-    float Y = s * height / 2;
+		glm::vec3 origin(0, 0, 0);
+		glm::vec3 direction(dx, dy, dz);
+		direction = glm::normalize(direction);
 
-    for(int i = 0; i < width ; i++)
-        for(int j = 0; j < height ; j++){
+		Ray ray(origin, direction);
+		image_values[index] = toneMapping(trace_ray(ray));
+	}
+}
 
-			float dx = X + i*s + s/2;
-            float dy = Y - j*s - s/2;
-            float dz = 1;
+int main(int argc, const char* argv[]) {
+	clock_t t = clock();
 
-			glm::vec3 origin(0, 0, 0);
-            glm::vec3 direction(dx, dy, dz);
-            direction = glm::normalize(direction);
+	int width = 1024;
+	int height = 768;
+	float fov = 90;
 
-            Ray ray(origin, direction);
-            image.setPixel(i, j, toneMapping(trace_ray(ray)));
-        }
-	
-    t = clock() - t;
-    cout<<"It took " << ((float)t)/CLOCKS_PER_SEC<< " seconds to render the image."<< endl;
-    cout<<"I could render at "<< (float)CLOCKS_PER_SEC/((float)t) << " frames per second."<<endl;
+	sceneDefinition();
 
-	// Writing the final results of the rendering
-	if (argc == 2){
+	Image image(width, height);
+	vector<glm::vec3> image_values(width * height);
+
+	float s = 2 * tan(0.5 * fov * M_PI / 180) / width;
+	float X = -s * width / 2;
+	float Y = s * height / 2;
+
+	// Determine segment size for each thread
+	int num_pixels = width * height;
+	int segment_size = num_pixels / NUM_THREADS;
+
+	vector<thread> threads;
+	for (int i = 0; i < NUM_THREADS; i++) {
+		int start = i * segment_size;
+		int end = (i == NUM_THREADS - 1) ? num_pixels : start + segment_size;
+		threads.push_back(thread(render_chank, start, end, width, height, X, Y, s, ref(image_values)));
+	}
+
+	for (auto& thread : threads) {
+		thread.join();
+	}
+
+	// Transfer image values to the image
+	for (int i = 0; i < width; i++) {
+		for (int j = 0; j < height; j++) {
+			image.setPixel(i, j, image_values[i + j * width]);
+		}
+	}
+
+	t = clock() - t;
+	cout << "Rendering time: " << ((float)t) / CLOCKS_PER_SEC << " seconds.\n";
+	cout << "FPS: " << (float)CLOCKS_PER_SEC / ((float)t) << endl;
+
+	if (argc == 2) {
 		image.writeImage(argv[1]);
-	}else{
+	}
+	else {
 		image.writeImage("./result.ppm");
 	}
 
-	
-    return 0;
+	return 0;
 }

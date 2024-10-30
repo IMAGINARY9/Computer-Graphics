@@ -8,7 +8,7 @@
 #ifndef Material_h
 #define Material_h
 
-#include "glm/glm.hpp"
+#include "../glm/glm.hpp"
 
 /**
  Structure describing a material of an object
