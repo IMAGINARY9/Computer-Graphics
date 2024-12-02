@@ -11,13 +11,16 @@
                 in vec3 a_color;
                 out vec3 v_color;
 
-                uniform mat4 rotationMatrix; // required for the template, please remove
+                // uniform mat4 rotationMatrix; // required for the template, please remove
+                uniform mat4 viewMatrix;
+                uniform mat4 projectionMatrix;
 
                 void main(){
                     v_color = a_color;
 
                     // replace the rotationMatrix with correct transformations
-                    gl_Position = rotationMatrix * vec4(a_position,1.0);
+                    // gl_Position = rotationMatrix * vec4(a_position, 1.0);
+                    gl_Position = projectionMatrix * viewMatrix * vec4(a_position, 1.0);
                 }`;
 
             var fragmentShaderCode =
@@ -33,7 +36,7 @@
                 }`;
 
             
-            // vertices and colors of our traingle
+            // vertices and colors of our triangle
             var triangle_vertices = [
                 0.5, -0.5,  0.0,
                 0.0,  0.5,  0.0,
@@ -48,6 +51,9 @@
             var gl; // WebGL context
             var shaderProgram; // the GLSL program we will use for rendering
             var triangle_vao; // the vertex array object for the triangle
+            var plane_vao; // the vertex array object for the plane
+            var cube_vao; // the vertex array object for the cube
+            var sphere_vao; // the vertex array object for the sphere
 
 
             // The function initilize the WebGL canvas
@@ -122,32 +128,42 @@
             //      plane_vao = gl.createVertexArray();
             //      createVAO(plane_vao, shaderProgram, plane_vertices, plane_normals, plane_colors);
             function createVAO(vao, shader, vertices, colors){
-            }
-
-            function initBuffers(){
                 // a buffer for positions
-                var triangleVertexBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangle_vertices), gl.STATIC_DRAW);
+                var vertexBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
 
                 // a buffer for colors
-                var triangleColorBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, triangleColorBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangle_colors), gl.STATIC_DRAW);
+                var colorBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
 
                 // VAO for a triangle
-                triangle_vao = gl.createVertexArray();
-                gl.bindVertexArray(triangle_vao);
+                gl.bindVertexArray(vao);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexBuffer);
-                var positionAttributeLocation = gl.getAttribLocation(shaderProgram, "a_position");
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                var positionAttributeLocation = gl.getAttribLocation(shader, "a_position");
                 gl.enableVertexAttribArray(positionAttributeLocation);
                 gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, triangleColorBuffer);
-                var colorAttributeLocation = gl.getAttribLocation(shaderProgram, "a_color");
+                gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+                var colorAttributeLocation = gl.getAttribLocation(shader, "a_color");
                 gl.enableVertexAttribArray(colorAttributeLocation);
                 gl.vertexAttribPointer(colorAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+            }
+
+            function initBuffers(){
+                triangle_vao = gl.createVertexArray();
+                createVAO(triangle_vao, shaderProgram, triangle_vertices, triangle_colors);
+                                
+                plane_vao = gl.createVertexArray();
+                createVAO(plane_vao, shaderProgram, plane_vertices, plane_colors);
+                
+                cube_vao = gl.createVertexArray();
+                createVAO(cube_vao, shaderProgram, cube_vertices, cube_colors);
+
+                // sphere_vao = gl.createVertexArray();
+                // createVAO(sphere_vao, shaderProgram, sphere_vertices, sphere_colors);
             }
 
             function draw(){
@@ -161,16 +177,16 @@
                 let light_polar_angle = document.getElementById("light_polar_angle").value / 360 * 2 * Math.PI;
 
                 // add computation of camera position
-                // let camera_x =
-                // let camera_y =
-                // let camera_z =
-                // let camera_position = vec3.fromValues(camera_x, camera_y, camera_z);
+                let camera_x = camera_distance * Math.sin(camera_polar_angle) * Math.cos(camera_azimuthal_angle);
+                let camera_y = camera_distance * Math.sin(camera_polar_angle) * Math.sin(camera_azimuthal_angle);
+                let camera_z = camera_distance * Math.cos(camera_polar_angle);
+                let camera_position = vec3.fromValues(camera_x, camera_y, camera_z);
 
                 // add computation of light direction
-                // let light_x =
-                // let light_y =
-                // let light_z =
-                // let lightDirection = vec3.fromValues(light_x, light_y, light_z);
+                let light_x = Math.sin(light_polar_angle) * Math.cos(light_azimuthal_angle);
+                let light_y = Math.sin(light_polar_angle) * Math.sin(light_azimuthal_angle);
+                let light_z = Math.cos(light_polar_angle);
+                let lightDirection = vec3.fromValues(light_x, light_y, light_z);
                 // you will need to use the above values to compute view and projection matrices
 
 
@@ -179,15 +195,27 @@
                 var rotationMatrix = mat4.create();
                 mat4.fromRotation(rotationMatrix, -(rotation.value-100)/100*Math.PI, vec3.fromValues(0.0,0.0,1.0));
 
-
                 gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
                 gl.clearColor(0.2, 0.2, 0.2, 1.0);
                 gl.clear(gl.COLOR_BUFFER_BIT);
-                //gl.enable(gl.CULL_FACE);
+                // gl.enable(gl.CULL_FACE);
                 gl.enable(gl.DEPTH_TEST);
 
                 // enable the GLSL program for the rendering
                 gl.useProgram(shaderProgram);
+                
+                // TIP: You will need to set up the view and projection matrices here
+                // you can use the following code to set up the view matrix
+                let viewMatrix = mat4.create();
+                mat4.lookAt(viewMatrix, camera_position, vec3.fromValues(0,0,0), vec3.fromValues(0,0,1));
+                let viewMatrixLocation = gl.getUniformLocation(shaderProgram,"viewMatrix");
+                gl.uniformMatrix4fv(viewMatrixLocation, false, viewMatrix);
+
+                // Set up the projection matrix
+                let projectionMatrix = mat4.create();
+                mat4.perspective(projectionMatrix, camera_fov, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0);
+                let projectionMatrixLocation = gl.getUniformLocation(shaderProgram, "projectionMatrix");
+                gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
 
                 // TIPS:
                 // - Before drawing anything using the program you still have to set values of all uniforms.
@@ -195,12 +223,23 @@
                 // - The same, if you draw the same object, e.g., cube, multiple times, you do not need to bind the corresponding VAO everytime you draw, but you may want to change the transformation matrices.
 
 
-                // drawing the triangle, you can remove it
-                gl.bindVertexArray(triangle_vao);
                 let rotationMatrixLocation = gl.getUniformLocation(shaderProgram,"rotationMatrix");
                 gl.uniformMatrix4fv(rotationMatrixLocation, false, rotationMatrix);
-                gl.drawArrays(gl.TRIANGLES, 0, triangle_vertices.length/3);
 
+                let lightDirectionLocation = gl.getUniformLocation(shaderProgram, "lightDirection");
+                gl.uniform3fv(lightDirectionLocation, lightDirection);
+                
+                // drawing the triangle, you can remove it
+                gl.bindVertexArray(triangle_vao);
+                gl.drawArrays(gl.TRIANGLES, 0, plane_vertices.length/3);
+                
+                // drawing the plane
+                gl.bindVertexArray(plane_vao);
+                gl.drawArrays(gl.TRIANGLES, 0, plane_vertices.length / 3);
+
+                // drawing the cube
+                gl.bindVertexArray(cube_vao);
+                gl.drawArrays(gl.TRIANGLES, 0, cube_vertices.length / 3);
 
                 // this line is required for creating an animation and updating the rendering
                 window.requestAnimationFrame(function() {draw();});
