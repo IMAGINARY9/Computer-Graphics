@@ -14,6 +14,7 @@
                 out vec3 v_color;
                 out vec3 v_normal;
                 out vec3 v_position;
+                out float v_lightDistance;
 
                 uniform mat4 viewMatrix;
                 uniform mat4 projectionMatrix;
@@ -21,6 +22,7 @@
                 uniform mat4 scaleMatrix;
                 uniform mat4 modelMatrix;
                 uniform mat3 normalMatrix;
+                uniform vec3 lightPosition;
 
                 // uniform mat4 rotationMatrix;
 
@@ -31,10 +33,9 @@
                     } else {
                         v_normal = mat3(transformationMatrix) * a_position;
                     }
-                    v_position = (transformationMatrix * vec4(a_position, 1.0)).xyz;
-
-                    gl_Position = projectionMatrix * viewMatrix * vec4(v_position, 1.0);
-                    gl_Position *= scaleMatrix * modelMatrix;
+                    v_position = (modelMatrix * vec4(a_position, 1.0)).xyz;
+                    v_lightDistance = max(0.1, distance(lightPosition, a_position));
+                    gl_Position = projectionMatrix * scaleMatrix * viewMatrix * modelMatrix * vec4(a_position, 1.0);
                 }`;
 
             var fragmentShaderCode =
@@ -44,14 +45,15 @@
                 in vec3 v_color;
                 in vec3 v_normal;
                 in vec3 v_position;
+                in float v_lightDistance;
                 uniform vec3 lightDirection;
 
                 const vec3 lightColor = vec3(1.0, 1.0, 1.0);
-                const float ambientStrength = 0.1;
+                const float ambientStrength = 1.0;
                 const float diffuseStrength = 0.5;
-                const float specularStrength = 0.5;
+                const float specularStrength = 0.75;
                 const float shininess = 50.0;
-                const float gamma = 1.5;
+                const float gamma = 1.25;
                 const float alpha = 1.0;
 
                 out vec4 out_color;
@@ -69,6 +71,12 @@
                     vec3 ambient = ambientStrength * lightColor;
 
                     vec3 color = (ambient + diffuse + specular) * v_color;
+
+                    float distance = v_lightDistance;
+                    // float distance = length(-v_position);
+
+                    float attenuation = 1.0 / (distance * distance);
+                    color *= attenuation;
 
                     vec3 toneMappedColor = alpha * pow(color, vec3(1.0 / gamma));
 
@@ -234,9 +242,6 @@
                 let lightDirection = vec3.fromValues(light_x, light_y, light_z);
                 // you will need to use the above values to compute view and projection matrices
 
-                // define light position
-                let lightPosition = vec3.fromValues(0.0, 0.0, 1.0);
-                
 
 
                 // the three lines below are for rotating the triangle, you can remove it
@@ -265,11 +270,9 @@
                 let projectionMatrixLocation = gl.getUniformLocation(shaderProgram, "projectionMatrix");
                 gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
 
-
-                // Check if the scale matrix is required
                 // Set up the scale matrix
                 let scaleMatrix = mat4.create();
-                mat4.fromScaling(scaleMatrix, vec3.fromValues(1.0, 1.0, 1.0));
+                mat4.fromScaling(scaleMatrix, vec3.fromValues(2.0, 2.0, 1.0));
                 let scaleMatrixLocation = gl.getUniformLocation(shaderProgram, "scaleMatrix");
                 gl.uniformMatrix4fv(scaleMatrixLocation, false, scaleMatrix);
 
@@ -295,9 +298,11 @@
                 // let rotationMatrixLocation = gl.getUniformLocation(shaderProgram,"rotationMatrix");
                 // gl.uniformMatrix4fv(rotationMatrixLocation, false, rotationMatrix);
 
-                // you will need to compute the light direction
                 let lightDirectionLocation = gl.getUniformLocation(shaderProgram, "lightDirection");
                 gl.uniform3fv(lightDirectionLocation, lightDirection);
+
+                let lightPosition = vec3.fromValues(0.0, 0.0, 1.0);
+
                 let lightPositionLocation = gl.getUniformLocation(shaderProgram, "lightPosition");
                 gl.uniform3fv(lightPositionLocation, lightPosition);
 
@@ -307,27 +312,27 @@
                 gl.drawArrays(gl.TRIANGLES, 0, plane_vertices.length / 3);
 
                 // drawing the first cube
-                transformationMatrix = mat4.create();
+                modelMatrix = mat4.create();
                 gl.bindVertexArray(cube_vao);
-                mat4.translate(transformationMatrix, transformationMatrix, [-0.5, 0, 0.130]);
-                mat4.scale(transformationMatrix, transformationMatrix, [0.125, 0.125, 0.125]);
-                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "transformationMatrix"), false, transformationMatrix);
+                mat4.translate(modelMatrix, modelMatrix, [-0.5, 0, 0.130]);
+                mat4.scale(modelMatrix, modelMatrix, [0.125, 0.125, 0.125]);
+                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
                 gl.drawArrays(gl.TRIANGLES, 0, cube_vertices.length / 3);
 
                 // drawing the second cube
-                transformationMatrix = mat4.create();
+                modelMatrix = mat4.create();
                 gl.bindVertexArray(cube_vao);
-                mat4.translate(transformationMatrix, transformationMatrix, [0.5, 0, 0.130]);
-                mat4.scale(transformationMatrix, transformationMatrix, [0.125, 0.125, 0.125]);
-                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "transformationMatrix"), false, transformationMatrix);
+                mat4.translate(modelMatrix, modelMatrix, [0.5, 0, 0.130]);
+                mat4.scale(modelMatrix, modelMatrix, [0.125, 0.125, 0.125]);
+                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
                 gl.drawArrays(gl.TRIANGLES, 0, cube_vertices.length / 3);
 
                 // drawing the sphere
-                transformationMatrix = mat4.create();
+                modelMatrix = mat4.create();
                 gl.bindVertexArray(sphere_vao);
-                mat4.translate(transformationMatrix, transformationMatrix, [0.0, 0.0, 0.130]);
-                mat4.scale(transformationMatrix, transformationMatrix, [0.25, 0.25, 0.25]);
-                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "transformationMatrix"), false, transformationMatrix);
+                mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, 0.130]);
+                mat4.scale(modelMatrix, modelMatrix, [0.25, 0.25, 0.25]);
+                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
                 gl.drawArrays(gl.TRIANGLES, 0, sphere_vertices.length / 3);
 
 
@@ -349,7 +354,7 @@
     </head>
 
     <body onload="start();">
-        <canvas id="webgl-canvas" width="768" height="768"></canvas>
+        <canvas id="webgl-canvas" width="1280" height="1024"></canvas>
         <div  style="float: right">
             <div class="slidecontainer" style="display: none;">
                 Rotation:</br><input type="range" min="0" max="200" value="100" id="rotation">
@@ -374,12 +379,6 @@
             </div>
             <div class="slidecontainer">
                 Polar angle:</br><input type="range" min="1" max="90" value="60" id="light_polar_angle">
-            </div>
-            <div class="slidecontainer">
-                Alpha:</br><input type="range" min="0" max="10" value="5" id="light_alpha">
-            </div>
-            <div class="slidecontainer">
-                Gamma:</br><input type="range" min="0" max="10" value="5" id="light_gamma">
             </div>
         </div>
     </body>

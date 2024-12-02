@@ -150,7 +150,7 @@ function create_sphere(){
             sphere_vertices.push(x1,y1,z1,x4,y4,z4,x3,y3,z3);
 
             for(let k = 0; k < 6; k++){
-                sphere_colors.push(1,1,1);
+                sphere_colors.push(0.25,0.25,0.25);
             }
 
         }
