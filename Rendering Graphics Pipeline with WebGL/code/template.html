@@ -48,39 +48,41 @@
                 in float v_lightDistance;
                 uniform vec3 lightDirection;
 
-                const vec3 lightColor = vec3(1.0, 1.0, 1.0);
-                const float ambientStrength = 1.0;
-                const float diffuseStrength = 0.5;
-                const float specularStrength = 0.75;
-                const float shininess = 50.0;
-                const float gamma = 1.25;
-                const float alpha = 1.0;
+                const vec3 ambientLight = vec3(0.1, 0.1, 0.1);
+                uniform float ambientStrength;
+                uniform float diffuseStrength;
+                uniform float specularStrength;
+                uniform float shininess;
+                const float gamma = 2.0;
+                const float alpha = 0.8;
 
                 out vec4 out_color;
                 void main(){
                     vec3 normal = normalize(v_normal);
                     vec3 viewDirection = normalize(-v_position);
 
-                    vec3 diffuse = diffuseStrength * lightColor * max(dot(normal, lightDirection), 0.0);
+                    float diffuse = diffuseStrength * max(dot(normal, lightDirection), 0.0);
 
-                    vec3 reflectDirection = reflect(-lightDirection, normal);
+                    vec3 reflectDirection = reflect(lightDirection, normal);
 
                     float spec = pow(max(dot(reflectDirection, viewDirection), 0.0), shininess);
-                    vec3 specular = specularStrength * lightColor * spec;
+                    float specular = specularStrength * spec;
 
-                    vec3 ambient = ambientStrength * lightColor;
+                    vec3 ambient = ambientStrength * ambientLight;
 
                     vec3 color = (ambient + diffuse + specular) * v_color;
 
                     float distance = v_lightDistance;
-                    // float distance = length(-v_position);
+                    // float distance = distance(v_position, lightDirection);
 
                     float attenuation = 1.0 / (distance * distance);
                     color *= attenuation;
 
                     vec3 toneMappedColor = alpha * pow(color, vec3(1.0 / gamma));
 
-                    out_color = vec4(toneMappedColor, 1.0);
+                    color = clamp(toneMappedColor, 0.0, 1.0);
+
+                    out_color = vec4(color, 1.0);
                 }`;
 
             
@@ -175,11 +177,15 @@
             //      createVAO(sphere_vao, shaderProgram, sphere_vertices, sphere_vertices, sphere_colors);
             //      plane_vao = gl.createVertexArray();
             //      createVAO(plane_vao, shaderProgram, plane_vertices, plane_normals, plane_colors);
-            function createVAO(vao, shader, vertices, colors){
+            function createVAO(vao, shader, vertices, normals, colors){
                 // a buffer for positions
                 var vertexBuffer = gl.createBuffer();
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+                var normalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
 
                 // a buffer for colors
                 var colorBuffer = gl.createBuffer();
@@ -194,6 +200,11 @@
                 gl.enableVertexAttribArray(positionAttributeLocation);
                 gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
 
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+                let normalLocation = gl.getAttribLocation(shader, "a_normal");
+                gl.enableVertexAttribArray(normalLocation);
+                gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, 0, 0);
+
                 gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
                 var colorAttributeLocation = gl.getAttribLocation(shader, "a_color");
                 gl.enableVertexAttribArray(colorAttributeLocation);
@@ -205,19 +216,31 @@
                 // createVAO(triangle_vao, shaderProgram, triangle_vertices, triangle_colors);
                                 
                 plane_vao = gl.createVertexArray();
-                createVAO(plane_vao, shaderProgram, plane_vertices, plane_colors);
+                createVAO(plane_vao, shaderProgram, plane_vertices, plane_normals, plane_colors);
                 
                 cube_vao = gl.createVertexArray();
-                createVAO(cube_vao, shaderProgram, cube_vertices, cube_colors);
+                createVAO(cube_vao, shaderProgram, cube_vertices, cube_normals, cube_colors);
 
                 sphere_vao = gl.createVertexArray();
                 create_sphere();
-                createVAO(sphere_vao, shaderProgram, sphere_vertices, sphere_colors);
+                sphere_normals = [];
+                createVAO(sphere_vao, shaderProgram, sphere_vertices, sphere_normals, sphere_colors);
 
                 //  Note that if you want to render two instances of the same object, e.g., two cubes, you do not need to create
                 //  two different sets of buffers. You can simply draw the triangles twice, but in the meantime change the model
                 //  matrix that is suplied to the vertex shader.
             }
+
+            function setup_material(ambient, diffuse, specular, shininess){
+                    let ambientLocation = gl.getUniformLocation(shaderProgram, "ambientStrength");
+                    gl.uniform1f(ambientLocation, ambient);
+                    let diffuseLocation = gl.getUniformLocation(shaderProgram, "diffuseStrength");
+                    gl.uniform1f(diffuseLocation, diffuse);
+                    let specularLocation = gl.getUniformLocation(shaderProgram, "specularStrength");
+                    gl.uniform1f(specularLocation, specular);
+                    let shininessLocation = gl.getUniformLocation(shaderProgram, "shininess");
+                    gl.uniform1f(shininessLocation, shininess);
+                }
 
             function draw(){
                 // input variables for controling camera and light parameters
@@ -301,14 +324,12 @@
                 let lightDirectionLocation = gl.getUniformLocation(shaderProgram, "lightDirection");
                 gl.uniform3fv(lightDirectionLocation, lightDirection);
 
-                let lightPosition = vec3.fromValues(0.0, 0.0, 1.0);
-
-                let lightPositionLocation = gl.getUniformLocation(shaderProgram, "lightPosition");
-                gl.uniform3fv(lightPositionLocation, lightPosition);
-
-
                 // drawing the plane
+                modelMatrix = mat4.create();
+                mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, -0.25]);
+                gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
                 gl.bindVertexArray(plane_vao);
+                setup_material(0.4, 0.6, 0.2, 100.0);
                 gl.drawArrays(gl.TRIANGLES, 0, plane_vertices.length / 3);
 
                 // drawing the first cube
@@ -317,6 +338,7 @@
                 mat4.translate(modelMatrix, modelMatrix, [-0.5, 0, 0.130]);
                 mat4.scale(modelMatrix, modelMatrix, [0.125, 0.125, 0.125]);
                 gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
+                setup_material(0.8, 1.6, 0.2, 10.0);
                 gl.drawArrays(gl.TRIANGLES, 0, cube_vertices.length / 3);
 
                 // drawing the second cube
@@ -325,6 +347,7 @@
                 mat4.translate(modelMatrix, modelMatrix, [0.5, 0, 0.130]);
                 mat4.scale(modelMatrix, modelMatrix, [0.125, 0.125, 0.125]);
                 gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
+                setup_material(0.4, 0.6, 0.2, 10.0);
                 gl.drawArrays(gl.TRIANGLES, 0, cube_vertices.length / 3);
 
                 // drawing the sphere
@@ -333,6 +356,7 @@
                 mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, 0.130]);
                 mat4.scale(modelMatrix, modelMatrix, [0.25, 0.25, 0.25]);
                 gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "modelMatrix"), false, modelMatrix);
+                setup_material(0.4, 0.6, 0.8, 100.0);
                 gl.drawArrays(gl.TRIANGLES, 0, sphere_vertices.length / 3);
 
 
@@ -354,7 +378,7 @@
     </head>
 
     <body onload="start();">
-        <canvas id="webgl-canvas" width="1280" height="1024"></canvas>
+        <canvas id="webgl-canvas" width="800" height="1024"></canvas>
         <div  style="float: right">
             <div class="slidecontainer" style="display: none;">
                 Rotation:</br><input type="range" min="0" max="200" value="100" id="rotation">
@@ -378,7 +402,7 @@
                 Azimuthal angle:</br><input type="range" min="-270" max="90" value="-70" id="light_azimuthal_angle">
             </div>
             <div class="slidecontainer">
-                Polar angle:</br><input type="range" min="1" max="90" value="60" id="light_polar_angle">
+                Polar angle:</br><input type="range" min="1" max="360" value="60" id="light_polar_angle">
             </div>
         </div>
     </body>
